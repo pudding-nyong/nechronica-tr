@@ -1,0 +1,259 @@
+:root{
+  --bg:#0b0c10;
+  --panel:#0f1118;
+  --panel2:#0c0e14;
+  --line:#232638;
+  --line2:#1a1d2a;
+  --text:#e6e6ef;
+  --muted:#a9adbd;
+
+  --ok:#2ecc71;
+  --damaged:#f1c40f;
+  --broken:#e74c3c;
+
+  --accent:#b38cff;   /* 보랏빛 */
+  --accent2:#67d6ff;  /* 청록빛 */
+}
+
+*{ box-sizing:border-box; }
+
+html, body{
+  height:100%;
+  margin:0;
+  background: radial-gradient(1200px 700px at 20% 0%, #14162a 0%, var(--bg) 60%) fixed;
+  color: var(--text);
+}
+
+body{
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+a{ color: var(--accent2); }
+
+.app{
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.titlebar{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom: 12px;
+}
+
+.h1{
+  margin:0;
+  font-size: 22px;
+  letter-spacing: .3px;
+}
+
+.sub{
+  margin:0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.grid{
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+}
+
+/* Panel */
+.panel{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.0)),
+              var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+.panelHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom: 10px;
+}
+
+.panelTitle{
+  font-weight: 900;
+  letter-spacing: .3px;
+}
+
+.badge{
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line2);
+  background: rgba(255,255,255,0.02);
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+/* Buttons */
+.btn{
+  border: 1px solid var(--line2);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor:pointer;
+  font-weight: 800;
+}
+.btn:hover{ border-color: var(--line); background: rgba(255,255,255,0.05); }
+.btn:active{ transform: translateY(1px); }
+
+.btnDanger{
+  border-color: rgba(231,76,60,.35);
+  background: rgba(231,76,60,.08);
+}
+.btnDanger:hover{
+  border-color: rgba(231,76,60,.55);
+  background: rgba(231,76,60,.12);
+}
+
+.btnAccent{
+  border-color: rgba(179,140,255,.35);
+  background: rgba(179,140,255,.10);
+}
+.btnAccent:hover{
+  border-color: rgba(179,140,255,.55);
+  background: rgba(179,140,255,.14);
+}
+
+/* Inputs */
+.input, .textarea{
+  width:100%;
+  border-radius: 12px;
+  border: 1px solid var(--line2);
+  background: rgba(0,0,0,.25);
+  color: var(--text);
+  padding: 10px 12px;
+  outline:none;
+}
+.input:focus, .textarea:focus{
+  border-color: rgba(103,214,255,.55);
+  box-shadow: 0 0 0 3px rgba(103,214,255,.12);
+}
+.textarea{
+  min-height: 120px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Mono", "Noto Sans Mono", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Parts */
+.partsRow{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom: 14px;
+}
+.partBtn{
+  border: 1px solid var(--line2);
+  background: rgba(255,255,255,0.02);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor:pointer;
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+.partBtn:hover{ border-color: var(--line); background: rgba(255,255,255,0.05); }
+
+.part-ok{ box-shadow: inset 0 0 0 1px rgba(46,204,113,.35); }
+.part-damaged{ box-shadow: inset 0 0 0 1px rgba(241,196,15,.35); }
+.part-broken{ box-shadow: inset 0 0 0 1px rgba(231,76,60,.35); }
+
+/* Log */
+.logBox{
+  max-height: 260px;
+  overflow:auto;
+  border-radius: 12px;
+  border: 1px solid var(--line2);
+  background: rgba(0,0,0,.18);
+}
+.logRow{
+  display:flex;
+  gap:10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 13px;
+}
+.logTime{
+  min-width: 62px;
+  color: var(--muted);
+}
+.logText{
+  white-space: pre-wrap;
+}
+
+.hint{
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.msg{
+  margin-top: 8px;
+  font-weight: 900;
+}
+.msgOk{ color: #8ff0b4; }
+.msgWarn{ color: #ffd37a; }
+.msgErr{ color: #ff8d85; }
+
+.twoCol{
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+}
+.w520{ width:520px; max-width:100%; }
+.wFull{ width:100%; }
+
+.logTag{
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  color: var(--muted);
+}
+.tag-dice{ border-color: rgba(103,214,255,.35); color: var(--accent2); }
+.tag-part{ border-color: rgba(179,140,255,.35); color: var(--accent); }
+.tag-save{ border-color: rgba(241,196,15,.35); color: #ffd37a; }
+.tag-warn{ border-color: rgba(231,76,60,.35); color: #ff8d85; }
+/* ===== scroll fix ===== */
+html, body {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+#root {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+/* app이 화면을 '고정'시키지 않도록 */
+.app {
+  height: auto;
+  min-height: 100vh;
+  overflow: visible;
+}
+
+/* 혹시 레이아웃 컨테이너가 높이 고정/숨김이면 풀어줌 */
+.twoCol,
+.panel,
+.titlebar {
+  overflow: visible;
+}
+
+/* 확대했을 때 스크롤이 꼭 필요하면 이게 제일 안전 */
+body {
+  overscroll-behavior: auto;
+}
