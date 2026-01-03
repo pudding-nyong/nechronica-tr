@@ -1,64 +1,91 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import "./styles.css";
 
-/** ===== Types ===== */
 type PartState = "ok" | "damaged" | "broken";
-type Parts = Record<string, PartState>;
+type Parts = Record<"head" | "body" | "armL" | "armR" | "legL" | "legR", PartState>;
 
-type LogEntry = { id: string; ts: number; text: string };
+type LogKind = "SYS" | "PART" | "DICE" | "SAVE" | "SIM";
+type LogEntry = { id: string; ts: number; kind: LogKind; text: string };
 
-type CheckType = "조사" | "교섭" | "행동" | "전투" | "정신";
+type NechPosition = "앨리스" | "홀릭" | "오토마톤" | "정크" | "코트" | "솔로리티";
+type NechClass =
+  | "스테이시"
+  | "타나토스"
+  | "고딕"
+  | "레퀴엠"
+  | "바로크"
+  | "로마네스크"
+  | "사이키델릭";
+type Treasure =
+  | "사진"
+  | "책"
+  | "언데드 펫"
+  | "부서진 부분"
+  | "거울"
+  | "인형"
+  | "봉제인형"
+  | "악세사리"
+  | "바구니"
+  | "귀여운 옷";
 
-type SimMode = "observe" | "intervene";
+type ReinforceType = "무기류" | "강화 장치" | "돌연변이";
+
+type RelationLevel = "신뢰" | "중립" | "경계" | "적대";
 
 type Character = {
   id: string;
   name: string;
+  position: NechPosition;
+  clazz: NechClass;
+  reinforceType: ReinforceType;
+  reinforceDetail: string; // 많으면 자유 작성
+  treasure: Treasure;
+  treasureCount: number; // 보물 개수(심리 안정용)
+  speech: "반말" | "존댓말" | "슴다체" | "무뚝뚝";
+  temperament: "냉정" | "다정" | "광기" | "게으름";
+  notes: string;
 
-  // 네크로니카
-  position: string;      // 앨리스~솔로리티
-  classType: string;     // 스테이시~사이키델릭
-  reinforceType: string; // 무기류/강화 장치/돌연변이
-  reinforceText: string; // 상세 직접 입력
-
-  // 보물 (심리안정용)
-  treasure: string;         // 보물 종류(선택)
-  treasureIntact: boolean;  // 보물 보유 여부(잃으면 false)
-
-  // RP/정책(선택형 유지)
-  temperament: string;
-  speech: string;
-  trust: string;
-
-  // 시뮬레이터 상태
-  madness: number; // 0~10 (높을수록 붕괴 가까움)
+  // 진행용 수치(원하는 만큼만 단순화)
+  mentalMod: number; // 광기 판정 보정(-3~+3)
+  madness: number; // 0~10 (10이면 붕괴)
 };
 
+type SceneType = "탐색" | "전투" | "교섭" | "공포";
+
 type SaveData = {
-  version: number;
+  version: 1;
+  mode: "setup" | "run";
   parts: Parts;
   log: LogEntry[];
   characters: Character[];
-
+  relations: Record<string, RelationLevel>; // key: "a|b" (정렬된 id)
+  // dice
+  diceNotation: string;
+  lastRoll?: { notation: string; rolls: number[]; total: number; mod: number };
   // sim
-  simMode: SimMode;
-  scene: SceneState | null;
-  activeIndex: number;
+  sceneType: SceneType;
+  checksInScene: number;
 };
 
-type SceneState = {
-  id: string;
-  title: string;
-  intro: string;
-  beat: number;        // 1..3
-  beatsTotal: number;  // 기본 3
-  tension: number;     // 0..5 분위기/위험도
-  lastOutcome?: string;
-};
+const LS_KEY = "nechronica-tr-save-v1";
 
-/** ===== Constants ===== */
-const LS_KEY = "nechronica_tr_state_sim_v2";
+const POSITIONS: NechPosition[] = ["앨리스", "홀릭", "오토마톤", "정크", "코트", "솔로리티"];
+const CLASSES: NechClass[] = ["스테이시", "타나토스", "고딕", "레퀴엠", "바로크", "로마네스크", "사이키델릭"];
+const TREASURES: Treasure[] = [
+  "사진",
+  "책",
+  "언데드 펫",
+  "부서진 부분",
+  "거울",
+  "인형",
+  "봉제인형",
+  "악세사리",
+  "바구니",
+  "귀여운 옷",
+];
+const REINFORCES: ReinforceType[] = ["무기류", "강화 장치", "돌연변이"];
 
-const prettyPartsName: Record<string, string> = {
+const prettyPartsName: Record<keyof Parts, string> = {
   head: "머리",
   body: "몸통",
   armL: "왼팔",
@@ -67,950 +94,935 @@ const prettyPartsName: Record<string, string> = {
   legR: "오른다리",
 };
 
-const defaultParts: Parts = {
-  head: "ok",
-  body: "ok",
-  armL: "ok",
-  armR: "ok",
-  legL: "ok",
-  legR: "ok",
-};
-
 const partLabel = (s: PartState) => (s === "ok" ? "정상" : s === "damaged" ? "손상" : "파괴");
 
-const OPT = {
-  position: ["앨리스", "홀릭", "오토마톤", "정크", "코트", "솔로리티"],
-  classType: ["스테이시", "타나토스", "고딕", "레퀴엠", "바로크", "로마네스크", "사이키델릭(확장)"],
-  reinforceType: ["무기류", "강화 장치", "돌연변이"],
-  treasure: ["사진", "책", "언데드 펫", "부서진 부분", "거울", "인형", "봉제인형", "악세사리", "바구니", "귀여운 옷"],
-  temperament: ["무감정", "냉소적", "집착", "광기", "헌신", "불안정", "천진난만", "잔혹", "기타"],
-  speech: ["존댓말", "반말", "무뚝뚝", "나른함", "조용함", "기타"],
-  trust: ["신뢰", "호의", "중립", "경계", "적대"],
-};
+const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
-/** ===== Utils ===== */
-const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-const formatTime = (ts: number) => {
+function formatTime(ts: number) {
   const d = new Date(ts);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
-};
-
-function safeJsonParse<T>(text: string): T | null {
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
-  }
 }
 
-/** 1d10 */
-function roll1d10(): number {
-  return 1 + Math.floor(Math.random() * 10);
+// 1d10만 지원(요청대로 통일). notation 예: "1d10+2" / "1d10-1"
+function parse1d10(notation: string): { mod: number } | null {
+  const s = notation.trim().toLowerCase().replace(/\s+/g, "");
+  // allow: 1d10, 1d10+2, 1d10-2
+  const m = s.match(/^1d10([+-]\d+)?$/);
+  if (!m) return null;
+  const mod = m[1] ? Number(m[1]) : 0;
+  if (!Number.isFinite(mod)) return null;
+  return { mod };
 }
 
-/** 결과 등급(1d10 통일) */
-type Grade = "성공" | "부분성공" | "실패" | "대참사";
-function gradeFromD10(x: number): Grade {
-  if (x >= 8) return "성공";
-  if (x >= 5) return "부분성공";
-  if (x >= 2) return "실패";
-  return "대참사"; // 1
+function roll1d10(mod: number) {
+  const die = Math.floor(Math.random() * 10) + 1; // 1~10
+  const total = die + mod;
+  return { die, total };
 }
 
-/** ===== Character factory (오류 방지 핵심) ===== */
-const makeCharacter = (over?: Partial<Character>): Character => ({
-  id: (globalThis.crypto?.randomUUID?.() ?? uid()),
-  name: "캐릭터",
-
-  position: "앨리스",
-  classType: "스테이시",
-  reinforceType: "무기류",
-  reinforceText: "",
-
-  treasure: "사진",
-  treasureIntact: true,
-
-  temperament: "무감정",
-  speech: "무뚝뚝",
-  trust: "중립",
-
-  madness: 0,
-
-  ...(over ?? {}),
-});
-
-/** 구버전 세이브 호환 */
-function normalizeCharacter(raw: Partial<Character>): Character {
-  return makeCharacter({
-    ...raw,
-    id: raw.id ?? (globalThis.crypto?.randomUUID?.() ?? uid()),
-    name: raw.name ?? "캐릭터",
-    position: raw.position ?? "앨리스",
-    classType: raw.classType ?? "스테이시",
-    reinforceType: raw.reinforceType ?? "무기류",
-    reinforceText: raw.reinforceText ?? "",
-    treasure: raw.treasure ?? "사진",
-    treasureIntact: raw.treasureIntact ?? true,
-    temperament: raw.temperament ?? "무감정",
-    speech: raw.speech ?? "무뚝뚝",
-    trust: raw.trust ?? "중립",
-    madness: Number.isFinite(raw.madness as number) ? (raw.madness as number) : 0,
-  });
+function relKey(a: string, b: string) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-/** ===== Scene generator ===== */
-const SCENE_TITLES = [
-  "폐허의 복도",
-  "무너진 계단",
-  "녹슨 수술실",
-  "검은 온실",
-  "막힌 격납고",
-  "정전된 제어실",
-  "차가운 기숙사",
-  "피 냄새 나는 창고",
-];
-
-function startNewScene(): SceneState {
-  const title = SCENE_TITLES[Math.floor(Math.random() * SCENE_TITLES.length)];
-  const tension = Math.floor(Math.random() * 3) + 1; // 1~3
-  const introPool = [
-    "먼지가 떠다닌다. 발소리가 너무 크게 들린다.",
-    "빛이 깨진다. 무언가가 너무 가까이 있다.",
-    "숨을 쉬는 것조차 들켜버릴 것 같다.",
-    "여기엔 사람이 있었고, 지금은 없다.",
-  ];
-  const intro = introPool[Math.floor(Math.random() * introPool.length)];
-  return {
-    id: uid(),
-    title,
-    intro,
-    beat: 1,
-    beatsTotal: 3,
-    tension,
-  };
+function pickOne<T>(arr: T[]) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/** ===== Choice generation ===== */
-type Choice = {
-  id: string;
-  label: string;
-  type: CheckType;
-  risk: number; // 0..2 (높을수록 파츠/보물 위험)
-};
-
-function makeChoicesForBeat(scene: SceneState): Choice[] {
-  // 비트별로 “자주 나오는 타입”을 조금씩 다르게
-  const beat = scene.beat;
-  const base: Array<CheckType> =
-    beat === 1 ? ["조사", "행동", "교섭"] :
-    beat === 2 ? ["정신", "조사", "행동"] :
-    ["전투", "행동", "정신"];
-
-  const templates: Record<CheckType, string[]> = {
-    조사: ["주변을 조사한다", "흔적을 추적한다", "단서를 회수한다"],
-    교섭: ["상대의 의도를 떠본다", "거리를 좁힌다", "거짓말을 섞어 설득한다"],
-    행동: ["조용히 이동한다", "급히 엄폐한다", "우회로를 찾는다"],
-    전투: ["선제 공격한다", "견제하며 후퇴한다", "희생으로 돌파한다"],
-    정신: ["호흡을 가다듬는다", "기억을 붙잡는다", "손끝의 감각에 집중한다"],
-  };
-
-  const riskByType: Record<CheckType, number> = {
-    조사: 0,
-    교섭: 0,
-    행동: 1,
-    전투: 2,
-    정신: 1,
-  };
-
-  return base.map((t) => {
-    const arr = templates[t];
-    const label = arr[Math.floor(Math.random() * arr.length)];
-    return {
-      id: uid(),
-      label,
-      type: t,
-      risk: riskByType[t],
-    };
-  });
-}
-
-/** ===== AI choice policy ===== */
-function scoreChoiceForCharacter(c: Character, choice: Choice, parts: Parts, scene: SceneState): number {
-  // 기본 점수
-  let s = 10;
-
-  // 광기 높으면 정신 관련 선택 경향↑
-  if (choice.type === "정신") s += Math.min(8, c.madness * 1.2);
-
-  // 적대/경계가 강하면 전투 경향↑
-  if (choice.type === "전투") {
-    if (c.trust === "적대") s += 8;
-    else if (c.trust === "경계") s += 4;
-    else s += 1;
-  }
-
-  // 조사 성향(냉정/무감정)
-  if (choice.type === "조사") {
-    if (c.temperament === "무감정" || c.temperament === "냉소적") s += 6;
-    if (scene.tension >= 3) s += 2;
-  }
-
-  // 행동(도주/엄폐)은 불안정/겁먹은 느낌(광기↑)일수록↑
-  if (choice.type === "행동") {
-    s += Math.min(6, c.madness);
-    if (scene.tension >= 3) s += 3;
-  }
-
-  // 보물 상실 상태면 정신이 불리해져서 “정신”을 피하거나 집착할 수도 있음.
-  // 여기서는: 보물이 없으면 정신 선택에 가산(집착/불안) +2
-  if (!c.treasureIntact && choice.type === "정신") s += 2;
-
-  // 파츠가 많이 망가졌으면 전투/행동을 살짝 회피
-  const brokenCount = Object.values(parts).filter((x) => x === "broken").length;
-  const damagedCount = Object.values(parts).filter((x) => x === "damaged").length;
-  const injury = brokenCount * 2 + damagedCount;
-  if (injury >= 3 && (choice.type === "전투" || choice.type === "행동")) s -= 4;
-
-  // 위험도가 높으면 전투/행동이 늘기도 하지만, 정신도 필요
-  s += scene.tension;
-
-  // 약간의 랜덤성
-  s += Math.random() * 4;
-
-  return s;
-}
-
-function pickChoiceAI(c: Character, choices: Choice[], parts: Parts, scene: SceneState): Choice {
-  let best = choices[0];
-  let bestScore = -Infinity;
-  for (const ch of choices) {
-    const sc = scoreChoiceForCharacter(c, ch, parts, scene);
-    if (sc > bestScore) {
-      bestScore = sc;
-      best = ch;
-    }
-  }
-  return best;
-}
-
-/** ===== Apply outcome ===== */
-function clamp(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, n));
-}
-
-function bumpPart(parts: Parts, key: string): Parts {
-  const curr = parts[key] ?? "ok";
-  const next: PartState = curr === "ok" ? "damaged" : curr === "damaged" ? "broken" : "broken";
-  return { ...parts, [key]: next };
-}
-
-function randomPartKey(): string {
-  const keys = Object.keys(defaultParts);
-  return keys[Math.floor(Math.random() * keys.length)];
-}
-
-type ResolveResult = {
-  roll: number;
-  grade: Grade;
-  text: string;
-  parts?: Parts;
-  character?: Character;
-  scene?: SceneState;
-};
-
-function resolveCheck(
-  scene: SceneState,
-  choice: Choice,
-  c: Character,
-  parts: Parts
-): ResolveResult {
-  // 1d10 굴림 + 타입별 간단 보정
-  let roll = roll1d10();
-
-  // 정신 판정: 보물(심리 안정) 있으면 결과 완화(+1), 없으면 불리(-1)
-  if (choice.type === "정신") {
-    roll += c.treasureIntact ? 1 : -1;
-    roll = clamp(roll, 1, 10);
-  }
-
-  const grade = gradeFromD10(roll);
-
-  let nextC: Character = { ...c };
-  let nextParts: Parts = { ...parts };
-  let nextScene: SceneState = { ...scene };
-
-  // 공통: 텍스트 뼈대
-  let text = `🎬 [${scene.title}] (비트 ${scene.beat}/${scene.beatsTotal}) — ${c.name}: ${choice.label} → ${choice.type} 판정 1d10=${roll} (${grade})`;
-
-  // 타입별 후처리
-  const risk = choice.risk + (scene.tension >= 3 ? 1 : 0);
-
-  const addMadness = (delta: number) => {
-    const before = nextC.madness;
-    nextC.madness = clamp(nextC.madness + delta, 0, 10);
-    if (nextC.madness !== before) {
-      text += ` / 광기 ${before}→${nextC.madness}`;
-    }
-  };
-
-  const maybeLoseTreasure = () => {
-    if (!nextC.treasureIntact) return;
-    // 위험도에 따라 보물 상실 확률
-    const p = risk === 0 ? 0.05 : risk === 1 ? 0.12 : 0.22;
-    if (Math.random() < p) {
-      nextC.treasureIntact = false;
-      text += ` / 💔 보물(${nextC.treasure}) 상실`;
-      // 상실 시 광기 증가(너 요청 반영)
-      addMadness(2);
-    }
-  };
-
-  const maybeDamagePart = () => {
-    const key = randomPartKey();
-    nextParts = bumpPart(nextParts, key);
-    text += ` / 🧩 ${prettyPartsName[key] ?? key} ${partLabel(parts[key] ?? "ok")}→${partLabel(nextParts[key])}`;
-  };
-
-  // 결과 반영(리듬 위해 간단/직관적으로)
-  if (choice.type === "조사") {
-    if (grade === "성공") {
-      nextScene.tension = clamp(nextScene.tension - 1, 0, 5);
-      text += " / 단서 확보(긴장-1)";
-    } else if (grade === "부분성공") {
-      text += " / 단서 확보(대가 있음)";
-      maybeLoseTreasure();
-    } else if (grade === "실패") {
-      nextScene.tension = clamp(nextScene.tension + 1, 0, 5);
-      text += " / 함정 노출(긴장+1)";
-    } else {
-      nextScene.tension = clamp(nextScene.tension + 2, 0, 5);
-      text += " / 숨겨진 진실이 폭주(긴장+2)";
-      addMadness(1);
-      maybeLoseTreasure();
-    }
-  }
-
-  if (choice.type === "교섭") {
-    if (grade === "성공") {
-      text += " / 분위기 장악";
-      nextScene.tension = clamp(nextScene.tension - 1, 0, 5);
-    } else if (grade === "부분성공") {
-      text += " / 거래 성사(기분 나쁜 약속)";
-      addMadness(1);
-    } else if (grade === "실패") {
-      text += " / 말이 엇나감";
-      nextScene.tension = clamp(nextScene.tension + 1, 0, 5);
-    } else {
-      text += " / 관계가 급변하는 붕괴의 전조";
-      addMadness(2);
-      maybeLoseTreasure();
-    }
-  }
-
-  if (choice.type === "행동") {
-    if (grade === "성공") {
-      text += " / 무사히 위치 확보";
-      nextScene.tension = clamp(nextScene.tension - 1, 0, 5);
-    } else if (grade === "부분성공") {
-      text += " / 이동 성공(흔적을 남김)";
-      maybeLoseTreasure();
-    } else if (grade === "실패") {
-      text += " / 고립";
-      nextScene.tension = clamp(nextScene.tension + 1, 0, 5);
-      maybeDamagePart();
-    } else {
-      text += " / 악화된 상황으로 휘말림";
-      nextScene.tension = clamp(nextScene.tension + 2, 0, 5);
-      maybeLoseTreasure();
-      maybeDamagePart();
-      addMadness(1);
-    }
-  }
-
-  if (choice.type === "전투") {
-    if (grade === "성공") {
-      text += " / 제압 또는 돌파";
-      nextScene.tension = clamp(nextScene.tension - 1, 0, 5);
-    } else if (grade === "부분성공") {
-      text += " / 돌파(대가: 파츠 손상)";
-      maybeDamagePart();
-      maybeLoseTreasure();
-    } else if (grade === "실패") {
-      text += " / 밀림(파츠 손상)";
-      maybeDamagePart();
-      nextScene.tension = clamp(nextScene.tension + 1, 0, 5);
-      maybeLoseTreasure();
-    } else {
-      text += " / 대참사(파츠 파괴/붕괴)";
-      // 대참사는 2회 정도 피해
-      maybeDamagePart();
-      maybeDamagePart();
-      maybeLoseTreasure();
-      addMadness(2);
-      nextScene.tension = clamp(nextScene.tension + 2, 0, 5);
-    }
-  }
-
-  if (choice.type === "정신") {
-    // 보물로 “쉽게 광기 판정” 나지 않게: 결과 자체가 완화(+1 이미 적용)
-    // 추가로, 정신 판정은 실패 시 광기 상승이 핵심
-    if (grade === "성공") {
-      text += " / 심신 안정";
-      addMadness(-1);
-    } else if (grade === "부분성공") {
-      text += " / 간신히 버팀";
-      // 변화 없음(혹은 +0)
-    } else if (grade === "실패") {
-      text += " / 흔들림";
-      addMadness(1);
-      maybeLoseTreasure();
-    } else {
-      text += " / 붕괴의 파도";
-      addMadness(2);
-      maybeLoseTreasure();
-    }
-  }
-
-  // 붕괴 임계치 연출(광기 8 이상이면 선택이 거칠어지도록 다음 비트 긴장+1)
-  if (nextC.madness >= 8) {
-    nextScene.tension = clamp(nextScene.tension + 1, 0, 5);
-    text += " / ⚠️ 고광기(긴장+1)";
-  }
-
-  nextScene.lastOutcome = text;
-
-  return { roll, grade, text, parts: nextParts, character: nextC, scene: nextScene };
-}
-
-/** ===== App ===== */
 export default function App() {
-  const [parts, setParts] = useState<Parts>(defaultParts);
-  const [log, setLog] = useState<LogEntry[]>([]);
-  const [characters, setCharacters] = useState<Character[]>([
-    makeCharacter({ name: "캐릭터 1" }),
+  // ----- core state -----
+  const [mode, setMode] = useState<"setup" | "run">("setup");
+
+  const [parts, setParts] = useState<Parts>({
+    head: "ok",
+    body: "ok",
+    armL: "ok",
+    armR: "ok",
+    legL: "ok",
+    legR: "ok",
+  });
+
+  const [log, setLog] = useState<LogEntry[]>([
+    { id: uid(), ts: Date.now(), kind: "SYS", text: "세션 시작" },
   ]);
 
-  // sim
-  const [simMode, setSimMode] = useState<SimMode>("observe");
-  const [scene, setScene] = useState<SceneState | null>(null);
-  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const [characters, setCharacters] = useState<Character[]>([
+    {
+      id: uid(),
+      name: "캐릭터 1",
+      position: "앨리스",
+      clazz: "스테이시",
+      reinforceType: "무기류",
+      reinforceDetail: "",
+      treasure: "인형",
+      treasureCount: 2,
+      speech: "반말",
+      temperament: "냉정",
+      notes: "",
+      mentalMod: 0,
+      madness: 0,
+    },
+  ]);
 
-  // save/load textarea
-  const [jsonBox, setJsonBox] = useState<string>("");
+  const [relations, setRelations] = useState<Record<string, RelationLevel>>({});
 
-  /** ===== Log helpers ===== */
-  const addLog = (text: string) => {
-    setLog((prev) => [{ id: uid(), ts: Date.now(), text }, ...prev].slice(0, 800));
+  // ----- dice -----
+  const [diceNotation, setDiceNotation] = useState("1d10+0");
+  const [lastRoll, setLastRoll] = useState<SaveData["lastRoll"]>(undefined);
+
+  // ----- sim -----
+  const [sceneType, setSceneType] = useState<SceneType>("탐색");
+  const [checksInScene, setChecksInScene] = useState(3);
+
+  // ----- save/load textarea -----
+  const [jsonBox, setJsonBox] = useState("");
+
+  // log scroll
+  const logRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!logRef.current) return;
+    logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [log]);
+
+  const addLog = (kind: LogKind, text: string) => {
+    setLog((prev) => {
+      const next = [...prev, { id: uid(), ts: Date.now(), kind, text }];
+      // 너무 길어지면 잘라내기
+      const LIMIT = 800;
+      return next.length > LIMIT ? next.slice(next.length - LIMIT) : next;
+    });
   };
-  const clearLog = () => setLog([]);
 
-  /** ===== Parts (manual toggle) ===== */
-  const togglePart = (key: string) => {
+  const togglePart = (key: keyof Parts) => {
     setParts((prev) => {
-      const curr = prev[key] ?? "ok";
-      const next: PartState = curr === "ok" ? "damaged" : curr === "damaged" ? "broken" : "ok";
-      const updated = { ...prev, [key]: next };
-      addLog(`🧩 파츠: ${prettyPartsName[key] ?? key} → ${partLabel(next)} (${next})`);
-      return updated;
+      const cur = prev[key];
+      const next: PartState = cur === "ok" ? "damaged" : cur === "damaged" ? "broken" : "ok";
+      const out = { ...prev, [key]: next };
+      addLog("PART", `파츠 변경: ${prettyPartsName[key]} → ${partLabel(next)} (${next})`);
+      return out;
     });
   };
 
-  /** ===== Characters helpers ===== */
-  const addCharacter = () => {
-    const n = characters.length + 1;
-    const ch = makeCharacter({ name: `캐릭터 ${n}` });
-    setCharacters((prev) => [ch, ...prev]);
-    addLog(`👤 캐릭터 추가: ${ch.name}`);
-  };
+  const partsSummary = useMemo(() => {
+    const broken = Object.entries(parts)
+      .filter(([, s]) => s === "broken")
+      .map(([k]) => prettyPartsName[k as keyof Parts]);
+    const damaged = Object.entries(parts)
+      .filter(([, s]) => s === "damaged")
+      .map(([k]) => prettyPartsName[k as keyof Parts]);
+    return { broken, damaged };
+  }, [parts]);
 
-  const removeCharacter = (id: string) => {
-    const target = characters.find((c) => c.id === id);
-    setCharacters((prev) => prev.filter((c) => c.id !== id));
-    addLog(`🗑️ 캐릭터 삭제: ${target?.name ?? id}`);
-    // activeIndex 보정
-    setActiveIndex((i) => Math.max(0, Math.min(i, Math.max(0, characters.length - 2))));
-  };
-
-  const updateCharacter = (id: string, patch: Partial<Character>) => {
-    setCharacters((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  };
-
-  /** ===== Sim actions ===== */
-  const beginScene = () => {
-    const sc = startNewScene();
-    setScene(sc);
-    addLog(`🌑 씬 시작: ${sc.title} — ${sc.intro}`);
-  };
-
-  const endScene = () => {
-    if (!scene) return;
-    addLog(`🌘 씬 종료: ${scene.title} (긴장 ${scene.tension})`);
-    setScene(null);
-  };
-
-  const currentActor = characters[activeIndex] ?? characters[0];
-
-  const choices = useMemo(() => {
-    if (!scene) return [];
-    return makeChoicesForBeat(scene);
-  }, [scene?.id, scene?.beat]);
-
-  const advanceBeat = (picked?: Choice) => {
-    if (!scene) return;
-    if (characters.length === 0) return;
-
-    const actor = currentActor ?? characters[0];
-    const chosen =
-      simMode === "observe"
-        ? pickChoiceAI(actor, choices, parts, scene)
-        : (picked ?? choices[0]);
-
-    const res = resolveCheck(scene, chosen, actor, parts);
-
-    // apply
-    if (res.parts) setParts(res.parts);
-    if (res.character) {
-      setCharacters((prev) =>
-        prev.map((c) => (c.id === actor.id ? res.character! : c))
-      );
-    }
-    if (res.scene) setScene(res.scene);
-    addLog(res.text);
-
-    // 다음 비트 / 씬 종료 처리
-    setScene((prev) => {
-      if (!prev) return prev;
-      const nextBeat = prev.beat + 1;
-      if (nextBeat > prev.beatsTotal) {
-        // 씬 종료
-        setTimeout(() => endScene(), 0);
-        return prev;
-      }
-      return { ...prev, beat: nextBeat };
-    });
-
-    // 다음 액터로(라운드 로빈)
-    setActiveIndex((i) => (characters.length === 0 ? 0 : (i + 1) % characters.length));
-  };
-
-  /** ===== Save/Load ===== */
+  // ----- save/load helpers -----
   const buildSaveData = (): SaveData => ({
-    version: 2,
+    version: 1,
+    mode,
     parts,
     log,
     characters,
-    simMode,
-    scene,
-    activeIndex,
+    relations,
+    diceNotation,
+    lastRoll,
+    sceneType,
+    checksInScene,
   });
 
   const applySaveData = (data: SaveData) => {
-    setParts(data.parts ?? defaultParts);
-    setLog(data.log ?? []);
-    setCharacters((data.characters ?? []).map(normalizeCharacter));
-    setSimMode(data.simMode ?? "observe");
-    setScene(data.scene ?? null);
-    setActiveIndex(Number.isFinite(data.activeIndex) ? data.activeIndex : 0);
+    setMode(data.mode ?? "setup");
+    setParts(data.parts);
+    setLog(data.log?.length ? data.log : [{ id: uid(), ts: Date.now(), kind: "SYS", text: "세션 시작" }]);
+    setCharacters(data.characters?.length ? data.characters : []);
+    setRelations(data.relations ?? {});
+    setDiceNotation(data.diceNotation ?? "1d10+0");
+    setLastRoll(data.lastRoll);
+    setSceneType(data.sceneType ?? "탐색");
+    setChecksInScene(data.checksInScene ?? 3);
   };
 
-  const exportJson = () => {
-    const text = JSON.stringify(buildSaveData(), null, 2);
-    setJsonBox(text);
-    addLog("💾 세이브: JSON 내보내기");
+  const saveLocal = () => {
+    const data = buildSaveData();
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    addLog("SAVE", "로컬 저장 완료(localStorage).");
   };
 
-  const importJson = () => {
-    const parsed = safeJsonParse<SaveData>(jsonBox);
-    if (!parsed) {
-      addLog("⚠️ 로드: JSON 파싱 실패");
+  const loadLocal = () => {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) {
+      addLog("SAVE", "로컬 저장 데이터가 없어.");
       return;
     }
-    applySaveData(parsed);
-    addLog("📥 로드: JSON 불러오기");
+    try {
+      const data = JSON.parse(raw) as SaveData;
+      if (!data || data.version !== 1) throw new Error("version mismatch");
+      applySaveData(data);
+      addLog("SAVE", "로컬 불러오기 완료(localStorage).");
+    } catch {
+      addLog("SAVE", "로컬 불러오기 실패: 데이터가 깨졌거나 형식이 달라.");
+    }
+  };
+
+  const exportJsonToBox = () => {
+    const data = buildSaveData();
+    setJsonBox(JSON.stringify(data, null, 2));
+    addLog("SAVE", "JSON 내보내기: 텍스트 박스에 생성 완료.");
+  };
+
+  const importJsonFromBox = () => {
+    const raw = jsonBox.trim();
+    if (!raw) {
+      addLog("SAVE", "JSON 불러오기 실패: 텍스트가 비어있어.");
+      return;
+    }
+    try {
+      const data = JSON.parse(raw) as SaveData;
+      if (!data || data.version !== 1) throw new Error("version mismatch");
+      applySaveData(data);
+      addLog("SAVE", "JSON 불러오기 완료.");
+    } catch {
+      addLog("SAVE", "JSON 불러오기 실패: JSON 형식 확인해줘.");
+    }
   };
 
   const resetAll = () => {
-    setParts(defaultParts);
-    setLog([]);
-    setCharacters([makeCharacter({ name: "캐릭터 1" })]);
-    setSimMode("observe");
-    setScene(null);
-    setActiveIndex(0);
+    setMode("setup");
+    setParts({ head: "ok", body: "ok", armL: "ok", armR: "ok", legL: "ok", legR: "ok" });
+    setCharacters([
+      {
+        id: uid(),
+        name: "캐릭터 1",
+        position: "앨리스",
+        clazz: "스테이시",
+        reinforceType: "무기류",
+        reinforceDetail: "",
+        treasure: "인형",
+        treasureCount: 2,
+        speech: "반말",
+        temperament: "냉정",
+        notes: "",
+        mentalMod: 0,
+        madness: 0,
+      },
+    ]);
+    setRelations({});
+    setDiceNotation("1d10+0");
+    setLastRoll(undefined);
+    setSceneType("탐색");
+    setChecksInScene(3);
+    setLog([{ id: uid(), ts: Date.now(), kind: "SYS", text: "전체 초기화" }]);
     setJsonBox("");
-    addLog("🧨 전체 초기화");
   };
 
-  /** 자동 저장 */
-  useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify(buildSaveData()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parts, log, characters, simMode, scene, activeIndex]);
-
-  /** 첫 로드 */
-  useEffect(() => {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) {
-      addLog("🟢 세션 시작");
+  // ----- dice actions -----
+  const doRoll = () => {
+    const parsed = parse1d10(diceNotation);
+    if (!parsed) {
+      addLog("DICE", `주사위 표기 오류: "${diceNotation}" (예: 1d10+2)`);
       return;
     }
-    const parsed = safeJsonParse<SaveData>(raw);
-    if (parsed) applySaveData(parsed);
-    addLog("🟢 세션 시작 (로컬 자동 로드)");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const r = roll1d10(parsed.mod);
+    const info = { notation: diceNotation, rolls: [r.die], total: r.total, mod: parsed.mod };
+    setLastRoll(info);
+    addLog("DICE", `🎲 ${diceNotation} → [${r.die}] + (${parsed.mod >= 0 ? "+" : ""}${parsed.mod}) = ${r.total}`);
+  };
 
-  const summary = useMemo(() => {
-    const broken = Object.values(parts).filter((s) => s === "broken").length;
-    const damaged = Object.values(parts).filter((s) => s === "damaged").length;
-    const avgMadness =
-      characters.length === 0
-        ? 0
-        : Math.round((characters.reduce((a, c) => a + c.madness, 0) / characters.length) * 10) / 10;
-    return { broken, damaged, logCount: log.length, avgMadness };
-  }, [parts, log.length, characters]);
+  // ----- characters CRUD -----
+  const addCharacter = () => {
+    const idx = characters.length + 1;
+    setCharacters((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        name: `캐릭터 ${idx}`,
+        position: "앨리스",
+        clazz: "스테이시",
+        reinforceType: "무기류",
+        reinforceDetail: "",
+        treasure: "인형",
+        treasureCount: 2,
+        speech: "반말",
+        temperament: "냉정",
+        notes: "",
+        mentalMod: 0,
+        madness: 0,
+      },
+    ]);
+    addLog("SYS", `캐릭터 추가: 캐릭터 ${idx}`);
+  };
 
-  return (
-    <div className="app">
-      {/* Header */}
-      <div className="headerBar">
-        <div>
-          <div className="appTitle">네크로니카 TR 시뮬레이터</div>
-          <div className="subTitle">1d10 통일 · 보물=심리안정(상실 시 광기↑) · 1씬=3비트(여러 판정)</div>
-        </div>
+  const removeCharacter = (id: string) => {
+    setCharacters((prev) => prev.filter((c) => c.id !== id));
+    addLog("SYS", "캐릭터 삭제");
+    // relations 정리
+    setRelations((prev) => {
+      const next: Record<string, RelationLevel> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const [a, b] = k.split("|");
+        if (a !== id && b !== id) next[k] = v;
+      }
+      return next;
+    });
+  };
 
-        <div className="topActions">
-          <button className="btn btnAccent" onClick={exportJson}>JSON 내보내기</button>
-          <button className="btn" onClick={importJson}>JSON 불러오기</button>
-          <button className="btn btnDanger" onClick={resetAll}>전체 초기화</button>
+  const updateChar = (id: string, patch: Partial<Character>) => {
+    setCharacters((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  };
+
+  // ----- relations -----
+  const [relA, setRelA] = useState<string>("");
+  const [relB, setRelB] = useState<string>("");
+  const [relLevel, setRelLevel] = useState<RelationLevel>("중립");
+
+  useEffect(() => {
+    // 기본값 세팅
+    if (!relA && characters[0]) setRelA(characters[0].id);
+    if (!relB && characters[1]) setRelB(characters[1].id);
+  }, [characters, relA, relB]);
+
+  useEffect(() => {
+    if (!relA || !relB || relA === relB) return;
+    const k = relKey(relA, relB);
+    const cur = relations[k] ?? "중립";
+    setRelLevel(cur);
+  }, [relA, relB, relations]);
+
+  const saveRelation = () => {
+    if (!relA || !relB || relA === relB) return;
+    const k = relKey(relA, relB);
+    setRelations((prev) => ({ ...prev, [k]: relLevel }));
+    const aName = characters.find((c) => c.id === relA)?.name ?? "A";
+    const bName = characters.find((c) => c.id === relB)?.name ?? "B";
+    addLog("SIM", `관계 변경: ${aName} ↔ ${bName} = ${relLevel}`);
+  };
+
+  // ----- simulation: 1 scene multiple checks -----
+  const sceneTemplates: Record<SceneType, string[]> = {
+    탐색: [
+      "{A}는(은) 폐허의 틈을 더듬어 단서를 찾는다.",
+      "{A}는(은) 낡은 표식을 확인하고 이동 경로를 추정한다.",
+      "{A}는(은) 주변 소리를 죽이고 위험을 가늠한다.",
+    ],
+    전투: [
+      "{A}는(은) 반사적으로 사거리를 잡고 공격한다.",
+      "{A}는(은) 빈틈을 파고들어 상대의 균형을 무너뜨린다.",
+      "{A}는(은) 몸을 낮춰 치명상을 피한다.",
+    ],
+    교섭: [
+      "{A}는(은) 말투를 조절해 상대의 의도를 떠본다.",
+      "{A}는(은) 조건을 제시하고 반응을 관찰한다.",
+      "{A}는(은) 분위기를 장악하려 한다.",
+    ],
+    공포: [
+      "{A}는(은) 불길한 직감을 억누르며 한 발 내딛는다.",
+      "{A}는(은) 귓가의 소음을 애써 무시한다.",
+      "{A}는(은) 손끝이 떨리는 걸 감춘다.",
+    ],
+  };
+
+  const outcomeText = (die: number, total: number, target = 6) => {
+    // 네크로니카 감성: 1=대실패, 10=대성공, 그 외는 target 비교
+    if (die === 10) return "대성공(10)";
+    if (die === 1) return "대실패(1)";
+    return total >= target ? "성공" : "실패";
+  };
+
+  const doMadnessCheck = (c: Character, reason: string) => {
+    // 1d10 + mentalMod vs 6
+    const r = roll1d10(c.mentalMod);
+    const out = outcomeText(r.die, r.total, 6);
+    addLog("SIM", `🧠 광기 판정(${c.name}) [1d10${c.mentalMod >= 0 ? "+" : ""}${c.mentalMod}] → ${r.die} = ${r.total} / ${out} (${reason})`);
+
+    if (r.die === 10) return; // 대성공: 변화 없음
+    if (r.total >= 6 && r.die !== 1) return; // 성공: 변화 없음
+
+    // 실패/대실패 -> 광기 +1
+    const nextMadness = clamp(c.madness + 1, 0, 10);
+    updateChar(c.id, { madness: nextMadness });
+
+    // 보물(심리 안정용) 있으면 “완충” 로그만(요청: 쉽게 광기판정 나지 않게 도움)
+    // 실제 수치 감소는 하지 않고, 네가 원하는대로 나중에 규칙 강화 가능
+    if (c.treasureCount > 0) {
+      addLog("SIM", `🧸 보물이 마음을 붙잡는다: ${c.treasure} (보유 ${c.treasureCount})`);
+    }
+
+    if (nextMadness >= 10) {
+      addLog("SIM", `💥 붕괴: ${c.name}의 광기점이 10에 도달했다.`);
+    }
+  };
+
+  const loseTreasure = (cid: string) => {
+    const c = characters.find((x) => x.id === cid);
+    if (!c) return;
+    if (c.treasureCount <= 0) {
+      addLog("SIM", `🧸 보물 분실 시도: ${c.name}은(는) 이미 보물이 없다.`);
+      return;
+    }
+    const nextCount = c.treasureCount - 1;
+    const nextMadness = clamp(c.madness + 1, 0, 10);
+    updateChar(cid, { treasureCount: nextCount, madness: nextMadness });
+    addLog("SIM", `🧸 보물 분실: ${c.name}의 ${c.treasure} (-1) → 광기점 +1 (${nextMadness}/10)`);
+    if (nextMadness >= 10) addLog("SIM", `💥 붕괴: ${c.name}의 광기점이 10에 도달했다.`);
+  };
+
+  const runScene = () => {
+    if (characters.length === 0) {
+      addLog("SIM", "씬 진행 실패: 캐릭터가 없어.");
+      return;
+    }
+    const count = clamp(checksInScene, 1, 10);
+    addLog("SIM", `🎬 씬 시작: ${sceneType} / 판정 ${count}회`);
+
+    for (let i = 0; i < count; i++) {
+      const c = pickOne(characters);
+      const line = pickOne(sceneTemplates[sceneType]).replaceAll("{A}", c.name);
+      addLog("SIM", `- ${line}`);
+
+      // 장면 타입별로 판정 종류를 간단히 분기(원하면 더 세밀하게 늘릴 수 있음)
+      if (sceneType === "공포") {
+        doMadnessCheck(c, "공포");
+      } else {
+        // 일반 행동 판정: 1d10+0 vs 6, 실패 시 약한 흔들림으로 광기 체크 1번
+        const r = roll1d10(0);
+        const out = outcomeText(r.die, r.total, 6);
+        addLog("SIM", `🎲 행동 판정(${c.name}) 1d10 → ${r.die} / ${out}`);
+        if (out === "실패" || out === "대실패(1)") {
+          doMadnessCheck(c, "실패 여파");
+        }
+      }
+    }
+
+    addLog("SIM", `✅ 씬 종료: ${sceneType}`);
+  };
+
+  const startRun = () => {
+    setMode("run");
+    addLog("SYS", "▶ 실행 모드로 전환");
+  };
+
+  const backToSetup = () => {
+    setMode("setup");
+    addLog("SYS", "↩ 설정 모드로 복귀");
+  };
+
+  // ----- UI blocks -----
+  const TopBar = (
+    <div className="topBar">
+      <div>
+        <div className="appTitle">네크로니카 TR 시뮬레이터</div>
+        <div className="appSubtitle">1d10 통일 · 파츠/로그/세이브 · 캐릭터 설정 → 실행 화면 전환</div>
+      </div>
+
+      <div className="topActions">
+        {mode === "run" ? (
+          <button className="btn" onClick={backToSetup} title="캐릭터 설정 화면으로">
+            설정으로
+          </button>
+        ) : (
+          <button className="btn btnAccent" onClick={startRun} title="실행 화면으로 전환">
+            실행
+          </button>
+        )}
+
+        <button className="btn" onClick={saveLocal} title="localStorage 저장">
+          저장(Local)
+        </button>
+        <button className="btn" onClick={loadLocal} title="localStorage 불러오기">
+          불러오기(Local)
+        </button>
+
+        <button className="btn" onClick={exportJsonToBox} title="텍스트박스에 JSON 생성">
+          JSON 내보내기
+        </button>
+        <button className="btn" onClick={importJsonFromBox} title="텍스트박스 JSON을 적용">
+          JSON 불러오기
+        </button>
+
+        <button className="btn btnDanger" onClick={resetAll} title="전체 초기화">
+          전체 초기화
+        </button>
+      </div>
+    </div>
+  );
+
+  const SavePanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">💾 세이브 / 로드</div>
+        <div className="panelRight hintSmall">자동 저장: 필요하면 저장(Local) 눌러줘.</div>
+      </div>
+
+      <textarea
+        className="textarea"
+        value={jsonBox}
+        onChange={(e) => setJsonBox(e.target.value)}
+        placeholder="내보내기 누르면 여기에 JSON 생성. 백업/공유용. 불러오기는 여기 JSON 붙여넣고 버튼."
+        rows={6}
+      />
+      <div className="hint">
+        Vercel 배포 업데이트는 “코드 수정 → GitHub에 push”가 되어야 반영돼. (로컬 localhost 링크는 업로드 대상 아님)
+      </div>
+    </div>
+  );
+
+  const PartsPanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">🧩 파츠</div>
+        <div className="panelRight hintSmall">
+          손상 {partsSummary.damaged.length} / 파괴 {partsSummary.broken.length}
         </div>
       </div>
 
-      <div className="layout">
-        {/* Sidebar */}
-        <div className="sidebar">
-          {/* Parts */}
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">🧩 파츠</div>
-                <div className="panelSub">클릭하면 정상→손상→파괴 순환</div>
-              </div>
-              <div className="panelSub">손상 {summary.damaged} / 파괴 {summary.broken}</div>
-            </div>
+      <div className="partsRow">
+        {Object.entries(parts).map(([key, state]) => (
+          <button
+            key={key}
+            onClick={() => togglePart(key as keyof Parts)}
+            className={`partBtn part-${state}`}
+            title="클릭하면 ok → damaged → broken 순환"
+          >
+            {prettyPartsName[key as keyof Parts]} : {partLabel(state as PartState)}
+          </button>
+        ))}
+      </div>
 
-            <div className="partsRow">
-              {Object.entries(parts).map(([key, state]) => (
-                <button
-                  key={key}
-                  onClick={() => togglePart(key)}
-                  className={`partBtn part-${state}`}
-                  title="클릭하면 정상→손상→파괴 순환"
-                >
-                  {(prettyPartsName as any)[key] ?? key} : {partLabel(state)}
-                </button>
-              ))}
-            </div>
+      {(partsSummary.damaged.length > 0 || partsSummary.broken.length > 0) && (
+        <div className="hint">
+          {partsSummary.damaged.length > 0 && <div>손상: {partsSummary.damaged.join(", ")}</div>}
+          {partsSummary.broken.length > 0 && <div>파괴: {partsSummary.broken.join(", ")}</div>}
+        </div>
+      )}
+    </div>
+  );
+
+  const DicePanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">🎲 다이스(1d10)</div>
+        <div className="panelRight hintSmall">예: 1d10+2 / 1d10-1</div>
+      </div>
+
+      <div className="row">
+        <input className="input" value={diceNotation} onChange={(e) => setDiceNotation(e.target.value)} />
+        <button className="btn btnAccent" onClick={doRoll}>
+          굴리기
+        </button>
+      </div>
+
+      <div className="hint">
+        {lastRoll ? (
+          <>
+            마지막: {lastRoll.notation} → [{lastRoll.rolls.join(", ")}] = <b>{lastRoll.total}</b>
+          </>
+        ) : (
+          "아직 굴린 기록 없음"
+        )}
+      </div>
+    </div>
+  );
+
+  const LogPanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">📝 로그</div>
+        <div className="panelRight">
+          <button className="btn btnDanger" onClick={() => setLog([])} title="로그 초기화">
+            초기화
+          </button>
+        </div>
+      </div>
+
+      <div ref={logRef} className="logBox">
+        {log.map((e) => (
+          <div key={e.id} className="logRow">
+            <div className="logTime">{formatTime(e.ts)}</div>
+            <div className={`logKind k-${e.kind}`}>{e.kind}</div>
+            <div className="logText">{e.text}</div>
           </div>
+        ))}
+      </div>
 
-          {/* Log */}
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">📝 로그</div>
-                <div className="panelSub">자동 기록 (최대 800줄)</div>
-              </div>
-              <button className="btn btnDanger" onClick={clearLog} title="로그 초기화">
-                초기화
+      <div className="hint">파츠/다이스/세이브/씬 이벤트가 자동 기록돼.</div>
+    </div>
+  );
+
+  const SetupCharacters = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">👤 캐릭터 시트(설정)</div>
+        <div className="panelRight">
+          <button className="btn btnAccent" onClick={addCharacter}>
+            + 캐릭터 추가
+          </button>
+        </div>
+      </div>
+
+      <div className="setupGrid">
+        {characters.map((c, idx) => (
+          <div key={c.id} className="charCard">
+            <div className="charCardTop">
+              <div className="charBadge">{idx + 1}</div>
+              <input
+                className="input charName"
+                value={c.name}
+                onChange={(e) => updateChar(c.id, { name: e.target.value })}
+                placeholder="이름"
+              />
+              <button className="btn btnDanger" onClick={() => removeCharacter(c.id)} title="삭제">
+                삭제
               </button>
             </div>
 
-            <div className="logBox">
-              {log.length === 0 ? (
-                <div className="hint">아직 로그가 없어.</div>
-              ) : (
-                log.map((e) => (
-                  <div key={e.id} className="logRow">
-                    <div className="logTime">{formatTime(e.ts)}</div>
-                    <div className="logText">{e.text}</div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="hint">평균 광기: {summary.avgMadness} / 10</div>
-          </div>
-        </div>
-
-        {/* Main */}
-        <div className="main">
-          {/* Simulator */}
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">🎮 시뮬레이터</div>
-                <div className="panelSub">관전/개입 토글 · 1씬=3비트(각 비트마다 1d10 판정)</div>
-              </div>
-
-              <div className="row rowWrap">
-                <button
-                  className={`btn ${simMode === "observe" ? "btnAccent" : ""}`}
-                  onClick={() => setSimMode("observe")}
-                  title="캐릭터가 자동으로 선택하고 진행(관전)"
+            <div className="formGrid">
+              <label>
+                <div className="label">포지션</div>
+                <select
+                  className="input"
+                  value={c.position}
+                  onChange={(e) => updateChar(c.id, { position: e.target.value as NechPosition })}
                 >
-                  관전
-                </button>
-                <button
-                  className={`btn ${simMode === "intervene" ? "btnAccent" : ""}`}
-                  onClick={() => setSimMode("intervene")}
-                  title="네가 선택지를 눌러 진행(개입)"
-                >
-                  개입
-                </button>
-                {!scene ? (
-                  <button className="btn btnAccent" onClick={beginScene}>씬 시작</button>
-                ) : (
-                  <button className="btn btnDanger" onClick={endScene}>씬 종료</button>
-                )}
-              </div>
-            </div>
-
-            {!scene ? (
-              <div className="hint">
-                “씬 시작”을 누르면 자동으로 상황이 생성되고, 비트(최대 3회 판정)로 진행돼.
-              </div>
-            ) : (
-              <>
-                <div className="hint">
-                  <b>{scene.title}</b> — {scene.intro} <br />
-                  비트 <b>{scene.beat}</b> / {scene.beatsTotal} · 긴장 <b>{scene.tension}</b> / 5 · 진행자:{" "}
-                  <b>{currentActor?.name ?? "없음"}</b>
-                </div>
-
-                <div className="row rowWrap" style={{ marginTop: 10 }}>
-                  {choices.map((ch) => (
-                    <button
-                      key={ch.id}
-                      className={`btn ${simMode === "intervene" ? "btnAccent" : ""}`}
-                      onClick={() => simMode === "intervene" && advanceBeat(ch)}
-                      title={`${ch.type} / 위험도 ${ch.risk}`}
-                      disabled={simMode !== "intervene"}
-                    >
-                      {ch.label} ({ch.type})
-                    </button>
+                  {POSITIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
                   ))}
-                </div>
+                </select>
+              </label>
 
-                <div className="row rowWrap" style={{ marginTop: 10 }}>
-                  <button className="btn btnAccent" onClick={() => advanceBeat()} title="관전은 자동 선택 / 개입은 선택지 미선택 시 기본값">
-                    다음 비트 진행
-                  </button>
-                  <div className="hint">
-                    판정: <b>1d10</b> · 성공(8~10) / 부분(5~7) / 실패(2~4) / 대참사(1)
-                    <br />
-                    보물은 심리 안정: <b>정신 판정 완화(+1)</b>, 상실 시 <b>광기 +2</b> & 정신 판정 불리(-1)
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+              <label>
+                <div className="label">클래스</div>
+                <select
+                  className="input"
+                  value={c.clazz}
+                  onChange={(e) => updateChar(c.id, { clazz: e.target.value as NechClass })}
+                >
+                  {CLASSES.map((cl) => (
+                    <option key={cl} value={cl}>
+                      {cl}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          {/* Characters */}
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">👤 캐릭터 시트</div>
-                <div className="panelSub">포지션/클래스/보물(심리안정) / 보강지점</div>
-              </div>
-              <button className="btn btnAccent" onClick={addCharacter}>+ 캐릭터 추가</button>
+              <label>
+                <div className="label">보강 지점</div>
+                <select
+                  className="input"
+                  value={c.reinforceType}
+                  onChange={(e) => updateChar(c.id, { reinforceType: e.target.value as ReinforceType })}
+                >
+                  {REINFORCES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <div className="label">보물</div>
+                <select
+                  className="input"
+                  value={c.treasure}
+                  onChange={(e) => updateChar(c.id, { treasure: e.target.value as Treasure })}
+                >
+                  {TREASURES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <div className="label">보물 보유(0~3)</div>
+                <select
+                  className="input"
+                  value={c.treasureCount}
+                  onChange={(e) => updateChar(c.id, { treasureCount: Number(e.target.value) })}
+                >
+                  {[0, 1, 2, 3].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <div className="label">말투</div>
+                <select
+                  className="input"
+                  value={c.speech}
+                  onChange={(e) => updateChar(c.id, { speech: e.target.value as Character["speech"] })}
+                >
+                  {["반말", "존댓말", "슴다체", "무뚝뚝"].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <div className="label">성향</div>
+                <select
+                  className="input"
+                  value={c.temperament}
+                  onChange={(e) => updateChar(c.id, { temperament: e.target.value as Character["temperament"] })}
+                >
+                  {["냉정", "다정", "광기", "게으름"].map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <div className="label">광기 보정(-3~+3)</div>
+                <input
+                  className="input"
+                  type="number"
+                  value={c.mentalMod}
+                  min={-3}
+                  max={3}
+                  onChange={(e) => updateChar(c.id, { mentalMod: clamp(Number(e.target.value), -3, 3) })}
+                />
+              </label>
+
+              <label>
+                <div className="label">현재 광기점(0~10)</div>
+                <input
+                  className="input"
+                  type="number"
+                  value={c.madness}
+                  min={0}
+                  max={10}
+                  onChange={(e) => updateChar(c.id, { madness: clamp(Number(e.target.value), 0, 10) })}
+                />
+              </label>
+
+              <label className="span2">
+                <div className="label">보강 상세(많으면 자유 작성)</div>
+                <input
+                  className="input"
+                  value={c.reinforceDetail}
+                  onChange={(e) => updateChar(c.id, { reinforceDetail: e.target.value })}
+                  placeholder="예: 팔에 내장형 톱니 / 신경 강화 / 변이 촉수 ..."
+                />
+              </label>
+
+              <label className="span2">
+                <div className="label">메모</div>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  value={c.notes}
+                  onChange={(e) => updateChar(c.id, { notes: e.target.value })}
+                  placeholder="성격/관계/금기/연출 포인트..."
+                />
+              </label>
             </div>
 
-            <div className="charList">
-              {characters.map((c) => (
-                <div key={c.id} className="panel" style={{ padding: 12 }}>
-                  <div className="charCardHeader">
-                    <div className="charName">{c.name}</div>
-                    <button className="btn btnDanger" onClick={() => removeCharacter(c.id)}>삭제</button>
-                  </div>
-
-                  <div className="grid2">
-                    <div>
-                      <div className="fieldLabel">이름</div>
-                      <input
-                        className="input"
-                        value={c.name}
-                        onChange={(e) => updateCharacter(c.id, { name: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">포지션</div>
-                      <select
-                        className="select"
-                        value={c.position}
-                        onChange={(e) => updateCharacter(c.id, { position: e.target.value })}
-                      >
-                        {OPT.position.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">클래스</div>
-                      <select
-                        className="select"
-                        value={c.classType}
-                        onChange={(e) => updateCharacter(c.id, { classType: e.target.value })}
-                      >
-                        {OPT.classType.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">보물(심리안정)</div>
-                      <select
-                        className="select"
-                        value={c.treasure}
-                        onChange={(e) => updateCharacter(c.id, { treasure: e.target.value })}
-                      >
-                        {OPT.treasure.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                      <div className="hint">
-                        상태: {c.treasureIntact ? "✅ 보유" : "💔 상실"} (상실 시 광기↑)
-                      </div>
-                      <div className="row rowWrap">
-                        <button
-                          className={`btn ${c.treasureIntact ? "" : "btnAccent"}`}
-                          onClick={() => updateCharacter(c.id, { treasureIntact: true })}
-                          type="button"
-                        >
-                          보물 보유
-                        </button>
-                        <button
-                          className={`btn ${!c.treasureIntact ? "btnDanger" : ""}`}
-                          onClick={() => updateCharacter(c.id, { treasureIntact: false, madness: clamp(c.madness + 2, 0, 10) })}
-                          type="button"
-                          title="보물 상실은 광기 +2"
-                        >
-                          보물 상실(+2)
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">보강 지점(분류)</div>
-                      <select
-                        className="select"
-                        value={c.reinforceType}
-                        onChange={(e) => updateCharacter(c.id, { reinforceType: e.target.value })}
-                      >
-                        {OPT.reinforceType.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">보강 지점(상세)</div>
-                      <input
-                        className="input"
-                        value={c.reinforceText}
-                        onChange={(e) => updateCharacter(c.id, { reinforceText: e.target.value })}
-                        placeholder="상세는 직접 입력"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">기질</div>
-                      <select
-                        className="select"
-                        value={c.temperament}
-                        onChange={(e) => updateCharacter(c.id, { temperament: e.target.value })}
-                      >
-                        {OPT.temperament.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">말투</div>
-                      <select
-                        className="select"
-                        value={c.speech}
-                        onChange={(e) => updateCharacter(c.id, { speech: e.target.value })}
-                      >
-                        {OPT.speech.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">태도(관계)</div>
-                      <select
-                        className="select"
-                        value={c.trust}
-                        onChange={(e) => updateCharacter(c.id, { trust: e.target.value })}
-                      >
-                        {OPT.trust.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <div className="fieldLabel">광기(0~10)</div>
-                      <div className="row rowWrap">
-                        <input
-                          className="input"
-                          type="number"
-                          min={0}
-                          max={10}
-                          value={c.madness}
-                          onChange={(e) => updateCharacter(c.id, { madness: clamp(Number(e.target.value || 0), 0, 10) })}
-                        />
-                        <button className="btn" onClick={() => updateCharacter(c.id, { madness: clamp(c.madness - 1, 0, 10) })}>-1</button>
-                        <button className="btn" onClick={() => updateCharacter(c.id, { madness: clamp(c.madness + 1, 0, 10) })}>+1</button>
-                      </div>
-                      <div className="hint">
-                        {c.madness >= 8 ? "⚠️ 고광기: 선택이 거칠어지고 긴장이 올라가기 쉬움" : "—"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="hint" style={{ marginTop: 8 }}>
-                    요약: {c.position}/{c.classType} · 보물({c.treasureIntact ? "보유" : "상실"}:{c.treasure}) · 보강({c.reinforceType}:{c.reinforceText || "—"}) · 광기 {c.madness}/10
-                  </div>
-
-                  <div className="row rowWrap" style={{ marginTop: 8 }}>
-                    <button
-                      className="btn"
-                      onClick={() => addLog(`👤 ${c.name} — ${c.position}/${c.classType} · 보물:${c.treasure}${c.treasureIntact ? "" : "(상실)"} · 보강:${c.reinforceType}/${c.reinforceText || "—"} · 광기 ${c.madness}/10`)}
-                    >
-                      요약 로그 남기기
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div className="charQuick">
+              <button className="btn" onClick={() => loseTreasure(c.id)} title="보물 1개 분실(+광기)">
+                🧸 보물 분실(+광기)
+              </button>
+              <button className="btn" onClick={() => doMadnessCheck(c, "수동")} title="광기 판정">
+                🧠 광기 판정
+              </button>
             </div>
           </div>
+        ))}
+      </div>
 
-          {/* Save/Load */}
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">💾 세이브 / 로드</div>
-                <div className="panelSub">자동 저장(localStorage) + JSON 백업/공유</div>
-              </div>
-            </div>
+      <div className="hint">
+        실행 누르면 화면이 “진행 모드(정돈된 레이아웃)”로 바뀐다.  
+        관계/씬/로그는 진행 모드에서 주로 보게 될 거야.
+      </div>
+    </div>
+  );
 
-            <textarea
-              className="textarea"
-              value={jsonBox}
-              onChange={(e) => setJsonBox(e.target.value)}
-              placeholder="내보내기 누르면 JSON이 생김. 복붙해서 백업/공유 가능. 불러오기는 JSON 붙여넣고 '불러오기'."
-            />
-            <div className="hint">
-              배포(Vercel) 반영은 수정 후 <b>Commit + Push</b> 해야 갱신돼.
-            </div>
-          </div>
+  const RunSimPanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">🎬 시뮬레이터</div>
+        <div className="panelRight">
+          <button className="btn btnAccent" onClick={runScene}>
+            씬 진행
+          </button>
         </div>
       </div>
+
+      <div className="formGrid">
+        <label>
+          <div className="label">씬 타입</div>
+          <select className="input" value={sceneType} onChange={(e) => setSceneType(e.target.value as SceneType)}>
+            {(["탐색", "전투", "교섭", "공포"] as SceneType[]).map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <div className="label">씬 내 판정 횟수(1~10)</div>
+          <input
+            className="input"
+            type="number"
+            value={checksInScene}
+            min={1}
+            max={10}
+            onChange={(e) => setChecksInScene(clamp(Number(e.target.value), 1, 10))}
+          />
+        </label>
+      </div>
+
+      <div className="hint">
+        - 탐색/전투/교섭: 행동 판정(1d10) 실패 시 “여파”로 광기 판정이 들어갈 수 있음  
+        - 공포: 매 판정이 바로 광기 판정(1d10+보정)  
+        (규칙은 네가 원하는 방향으로 더 네크로니카답게 강화 가능)
+      </div>
+    </div>
+  );
+
+  const RunRelationsPanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">🔗 관계</div>
+        <div className="panelRight">
+          <button className="btn btnAccent" onClick={saveRelation} disabled={!relA || !relB || relA === relB}>
+            저장
+          </button>
+        </div>
+      </div>
+
+      <div className="formGrid">
+        <label>
+          <div className="label">A</div>
+          <select className="input" value={relA} onChange={(e) => setRelA(e.target.value)}>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <div className="label">B</div>
+          <select className="input" value={relB} onChange={(e) => setRelB(e.target.value)}>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="span2">
+          <div className="label">관계</div>
+          <select className="input" value={relLevel} onChange={(e) => setRelLevel(e.target.value as RelationLevel)}>
+            {(["신뢰", "중립", "경계", "적대"] as RelationLevel[]).map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="hintSmall">
+        지금은 “관계값 저장 + 로그 기록”까지만. 다음 단계에서 관계값이 씬 텍스트/판정 확률에 영향 주게 확장 가능.
+      </div>
+    </div>
+  );
+
+  const RunCharactersPanel = (
+    <div className="panel">
+      <div className="panelHeader">
+        <div className="panelTitle">👥 생존자 목록</div>
+        <div className="panelRight hintSmall">{characters.length}명</div>
+      </div>
+
+      <div className="survivorList">
+        {characters.map((c) => (
+          <div key={c.id} className="survivorRow">
+            <div className="survivorName">{c.name}</div>
+            <div className="survivorMeta">
+              <span className="pill">{c.position}</span>
+              <span className="pill">{c.clazz}</span>
+              <span className="pill">광기 {c.madness}/10</span>
+              <span className="pill">🧸{c.treasureCount}</span>
+            </div>
+            <div className="survivorActions">
+              <button className="btn" onClick={() => doMadnessCheck(c, "수동")}>
+                광기 판정
+              </button>
+              <button className="btn" onClick={() => loseTreasure(c.id)}>
+                보물 분실
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ----- LAYOUT -----
+  return (
+    <div className="app">
+      {TopBar}
+
+      {mode === "setup" ? (
+        <div className="layoutSetup">
+          <div className="colMain">
+            {SetupCharacters}
+            {SavePanel}
+          </div>
+
+          <div className="colSide">
+            {PartsPanel}
+            {DicePanel}
+            {LogPanel}
+          </div>
+        </div>
+      ) : (
+        <div className="layoutRun">
+          {/* Left */}
+          <div className="runLeft">
+            {RunCharactersPanel}
+            {PartsPanel}
+            {DicePanel}
+            {SavePanel}
+          </div>
+
+          {/* Center */}
+          <div className="runCenter">
+            {RunSimPanel}
+            {LogPanel}
+          </div>
+
+          {/* Right */}
+          <div className="runRight">
+            {RunRelationsPanel}
+            <div className="panel">
+              <div className="panelHeader">
+                <div className="panelTitle">💡 팁</div>
+              </div>
+              <div className="hint">
+                - “설정으로” 돌아가서 캐릭터 추가/수정 가능<br />
+                - 씬을 반복하며 로그가 쌓이는 구조라, 네가 원하는 “붕괴” 감성을 점점 강화하기 좋다<br />
+                - 다음 단계: (1) 관계가 텍스트/판정에 영향, (2) 이벤트 풀/선택지, (3) 씬 길이/속도 조절
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

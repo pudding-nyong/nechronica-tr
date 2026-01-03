@@ -1,75 +1,94 @@
 :root{
-  --bg:#0b0c10;
-  --panel:#0f1118;
-  --panel2:#0c0e14;
-  --line:#232638;
-  --line2:#1a1d2a;
-  --text:#e6e6ef;
-  --muted:#a9adbd;
-
+  --bg0:#07080c;
+  --bg1:#0b0d14;
+  --panel:#0f1220cc;
+  --panel2:#0f1220ee;
+  --line:#ffffff1a;
+  --text:#e9eefc;
+  --muted:#aab3cc;
+  --accent:#7c5cff;
+  --danger:#ff4d4d;
   --ok:#2ecc71;
-  --damaged:#f1c40f;
-  --broken:#e74c3c;
-
-  --accent:#b38cff;   /* 보랏빛 */
-  --accent2:#67d6ff;  /* 청록빛 */
+  --warn:#f1c40f;
+  --bad:#e74c3c;
 }
 
 *{ box-sizing:border-box; }
-
-html, body{
-  height:100%;
-  margin:0;
-  background: radial-gradient(1200px 700px at 20% 0%, #14162a 0%, var(--bg) 60%) fixed;
-  color: var(--text);
-}
-
+html,body{ height:100%; }
 body{
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  margin:0;
+  background: radial-gradient(1200px 800px at 20% 10%, #141a2d 0%, var(--bg0) 45%, #04050a 100%);
+  color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial;
+  overflow:auto; /* 스크롤 막히는 문제 방지 */
 }
-
-a{ color: var(--accent2); }
 
 .app{
-  max-width: 1120px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 18px;
+  padding: 18px 16px 40px;
 }
 
-.titlebar{
-  display:flex;
-  align-items:flex-end;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom: 12px;
-}
-
-.h1{
-  margin:0;
-  font-size: 22px;
-  letter-spacing: .3px;
-}
-
-.sub{
-  margin:0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.grid{
+.topBar{
   display:flex;
   gap:14px;
-  flex-wrap:wrap;
+  align-items:flex-start;
+  justify-content:space-between;
+  margin-bottom:14px;
 }
 
-/* Panel */
+.appTitle{
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.6px;
+}
+.appSubtitle{
+  margin-top:4px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.topActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:flex-end;
+}
+
+.layoutSetup{
+  display:grid;
+  grid-template-columns: 1.4fr 0.9fr;
+  gap:14px;
+  align-items:start;
+}
+
+.colMain, .colSide{ display:flex; flex-direction:column; gap:14px; }
+
+.layoutRun{
+  display:grid;
+  grid-template-columns: 0.95fr 1.25fr 0.8fr;
+  gap:14px;
+  align-items:start;
+}
+
+.runLeft, .runCenter, .runRight{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+@media (max-width: 1100px){
+  .layoutSetup{ grid-template-columns:1fr; }
+  .layoutRun{ grid-template-columns:1fr; }
+}
+
+/* Panels */
 .panel{
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.0)),
-              var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  background: linear-gradient(180deg, #101429ee 0%, var(--panel2) 100%);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+  box-shadow: 0 10px 35px #00000055;
 }
 
 .panelHeader{
@@ -77,73 +96,72 @@ a{ color: var(--accent2); }
   align-items:center;
   justify-content:space-between;
   gap:10px;
-  margin-bottom: 10px;
+  margin-bottom:10px;
 }
 
 .panelTitle{
-  font-weight: 900;
-  letter-spacing: .3px;
+  font-weight:800;
+  letter-spacing:-0.3px;
+}
+.panelRight{ display:flex; align-items:center; gap:8px; }
+
+.hint{
+  margin-top:8px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+.hintSmall{
+  color:var(--muted);
+  font-size:11px;
 }
 
-.badge{
-  font-size: 11px;
-  color: var(--muted);
-  border: 1px solid var(--line2);
-  background: rgba(255,255,255,0.02);
-  padding: 4px 8px;
-  border-radius: 999px;
-}
-
-/* Buttons */
-.btn{
-  border: 1px solid var(--line2);
-  background: rgba(255,255,255,0.03);
-  color: var(--text);
-  padding: 8px 10px;
-  border-radius: 10px;
-  cursor:pointer;
-  font-weight: 800;
-}
-.btn:hover{ border-color: var(--line); background: rgba(255,255,255,0.05); }
-.btn:active{ transform: translateY(1px); }
-
-.btnDanger{
-  border-color: rgba(231,76,60,.35);
-  background: rgba(231,76,60,.08);
-}
-.btnDanger:hover{
-  border-color: rgba(231,76,60,.55);
-  background: rgba(231,76,60,.12);
-}
-
-.btnAccent{
-  border-color: rgba(179,140,255,.35);
-  background: rgba(179,140,255,.10);
-}
-.btnAccent:hover{
-  border-color: rgba(179,140,255,.55);
-  background: rgba(179,140,255,.14);
-}
-
-/* Inputs */
-.input, .textarea{
+/* Controls */
+.row{ display:flex; gap:8px; }
+.input{
   width:100%;
-  border-radius: 12px;
-  border: 1px solid var(--line2);
-  background: rgba(0,0,0,.25);
-  color: var(--text);
-  padding: 10px 12px;
+  padding:10px 10px;
+  background:#0b0e18;
+  color:var(--text);
+  border:1px solid var(--line);
+  border-radius:10px;
   outline:none;
 }
-.input:focus, .textarea:focus{
-  border-color: rgba(103,214,255,.55);
-  box-shadow: 0 0 0 3px rgba(103,214,255,.12);
+.input:focus{
+  border-color:#ffffff33;
+  box-shadow: 0 0 0 3px #7c5cff22;
 }
+
 .textarea{
-  min-height: 120px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Mono", "Noto Sans Mono", monospace;
-  font-size: 12px;
-  line-height: 1.35;
+  width:100%;
+  padding:10px 10px;
+  background:#0b0e18;
+  color:var(--text);
+  border:1px solid var(--line);
+  border-radius:10px;
+  outline:none;
+  resize: vertical;
+}
+
+.btn{
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--line);
+  background:#12162a;
+  color:var(--text);
+  cursor:pointer;
+  font-weight:700;
+}
+.btn:hover{ filter: brightness(1.08); }
+.btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+.btnAccent{
+  border-color:#7c5cff55;
+  background: linear-gradient(180deg, #2a2455 0%, #191634 100%);
+}
+.btnDanger{
+  border-color:#ff4d4d55;
+  background: linear-gradient(180deg, #3a1b1b 0%, #211010 100%);
 }
 
 /* Parts */
@@ -151,109 +169,136 @@ a{ color: var(--accent2); }
   display:flex;
   flex-wrap:wrap;
   gap:8px;
-  margin-bottom: 14px;
 }
 .partBtn{
-  border: 1px solid var(--line2);
-  background: rgba(255,255,255,0.02);
-  color: var(--text);
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  font-weight:900;
+  letter-spacing:-0.3px;
   cursor:pointer;
-  font-weight: 900;
-  letter-spacing: .2px;
+  background:#12162a;
 }
-.partBtn:hover{ border-color: var(--line); background: rgba(255,255,255,0.05); }
-
-.part-ok{ box-shadow: inset 0 0 0 1px rgba(46,204,113,.35); }
-.part-damaged{ box-shadow: inset 0 0 0 1px rgba(241,196,15,.35); }
-.part-broken{ box-shadow: inset 0 0 0 1px rgba(231,76,60,.35); }
+.part-ok{ box-shadow: 0 0 0 1px #2ecc7122 inset; }
+.part-damaged{ box-shadow: 0 0 0 1px #f1c40f22 inset; }
+.part-broken{ box-shadow: 0 0 0 1px #e74c3c22 inset; }
+.part-ok{ color:#c8ffd9; }
+.part-damaged{ color:#fff3c8; }
+.part-broken{ color:#ffd0d0; }
 
 /* Log */
 .logBox{
-  max-height: 260px;
+  height: 360px;
   overflow:auto;
-  border-radius: 12px;
-  border: 1px solid var(--line2);
-  background: rgba(0,0,0,.18);
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#070913;
+  padding:8px;
 }
 .logRow{
+  display:grid;
+  grid-template-columns: 64px 52px 1fr;
+  gap:8px;
+  padding:6px 6px;
+  border-bottom:1px solid #ffffff0e;
+}
+.logTime{ color:var(--muted); font-size:11px; }
+.logKind{
+  font-size:11px;
+  font-weight:900;
+  opacity:.95;
+}
+.k-SYS{ color:#7aa7ff; }
+.k-PART{ color:#45ffa6; }
+.k-DICE{ color:#ffd36a; }
+.k-SAVE{ color:#caa6ff; }
+.k-SIM{ color:#ff9bd6; }
+.logText{ font-size:12px; line-height:1.35; }
+
+/* Setup grid */
+.setupGrid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+}
+@media (max-width: 900px){
+  .setupGrid{ grid-template-columns:1fr; }
+}
+
+.charCard{
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#0b0e18;
+  padding:10px;
+}
+.charCardTop{
   display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:10px;
+}
+.charBadge{
+  width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:10px;
+  background:#141a2d;
+  border:1px solid var(--line);
+  font-weight:900;
+}
+.charName{ font-weight:900; }
+
+.formGrid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
   gap:10px;
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  font-size: 13px;
 }
-.logTime{
-  min-width: 62px;
-  color: var(--muted);
-}
-.logText{
-  white-space: pre-wrap;
+.formGrid .span2{ grid-column: 1 / span 2; }
+.label{
+  font-size:11px;
+  color:var(--muted);
+  margin-bottom:6px;
+  font-weight:800;
 }
 
-.hint{
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.msg{
-  margin-top: 8px;
-  font-weight: 900;
-}
-.msgOk{ color: #8ff0b4; }
-.msgWarn{ color: #ffd37a; }
-.msgErr{ color: #ff8d85; }
-
-.twoCol{
+.charQuick{
   display:flex;
-  gap:14px;
+  gap:8px;
+  margin-top:10px;
+}
+
+/* Survivors list */
+.survivorList{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.survivorRow{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+  background:#0b0e18;
+}
+.survivorName{
+  font-weight:900;
+  letter-spacing:-0.3px;
+  margin-bottom:6px;
+}
+.survivorMeta{
+  display:flex;
+  gap:6px;
   flex-wrap:wrap;
+  margin-bottom:8px;
 }
-.w520{ width:520px; max-width:100%; }
-.wFull{ width:100%; }
-
-.logTag{
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--line2);
-  color: var(--muted);
+.pill{
+  font-size:11px;
+  color:#dfe6ff;
+  background:#141a2d;
+  border:1px solid var(--line);
+  padding:5px 8px;
+  border-radius:999px;
 }
-.tag-dice{ border-color: rgba(103,214,255,.35); color: var(--accent2); }
-.tag-part{ border-color: rgba(179,140,255,.35); color: var(--accent); }
-.tag-save{ border-color: rgba(241,196,15,.35); color: #ffd37a; }
-.tag-warn{ border-color: rgba(231,76,60,.35); color: #ff8d85; }
-/* ===== scroll fix ===== */
-html, body {
-  height: auto;
-  min-height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-#root {
-  height: auto;
-  min-height: 100%;
-  overflow: visible;
-}
-
-/* app이 화면을 '고정'시키지 않도록 */
-.app {
-  height: auto;
-  min-height: 100vh;
-  overflow: visible;
-}
-
-/* 혹시 레이아웃 컨테이너가 높이 고정/숨김이면 풀어줌 */
-.twoCol,
-.panel,
-.titlebar {
-  overflow: visible;
-}
-
-/* 확대했을 때 스크롤이 꼭 필요하면 이게 제일 안전 */
-body {
-  overscroll-behavior: auto;
+.survivorActions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
 }
